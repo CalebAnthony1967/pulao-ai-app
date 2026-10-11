@@ -1,0 +1,270 @@
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { AlertCircle, Loader2, Mail, Scale } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { useSession } from "@/lib/session";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ROLE_LABELS } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+const SELECTABLE_ROLES = ["supplier", "committee", "researcher", "admin", "superadmin"];
+
+function landingFor(role) {
+  if (role === "committee") return "/committee";
+  if (role === "researcher") return "/research";
+  if (role === "admin" || role === "superadmin") return "/admin";
+  return "/supplier";
+}
+
+export default function AuthPortal() {
+  const navigate = useNavigate();
+  const { isAuthenticated, role, refreshProfile } = useSession();
+  const params = new URLSearchParams(window.location.search);
+  const [mode, setMode] = useState(params.get("mode") === "register" ? "register" : "signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [chosenRole, setChosenRole] = useState("supplier");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  useEffect(() => {
+    if (isAuthenticated && role) navigate(landingFor(role), { replace: true });
+  }, [isAuthenticated, role, navigate]);
+
+  const saveProfile = async (user, roleValue) => {
+    const { error: upsertError } = await supabase.from("users_roles").upsert(
+      {
+        id: user.id,
+        email: user.email,
+        full_name: fullName.trim() || user.email.split("@")[0],
+        organization: organization.trim() || null,
+        role: roleValue,
+      },
+      { onConflict: "id" },
+    );
+    if (upsertError) throw new Error(upsertError.message);
+    await refreshProfile();
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      if (mode === "register") {
+        const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+        if (signUpError) throw new Error(signUpError.message);
+        if (!data.session) {
+          setNotice("Account created. Check your inbox to confirm your email address, then sign in.");
+          setMode("signin");
+          return;
+        }
+        await saveProfile(data.user, chosenRole);
+        navigate(landingFor(chosenRole), { replace: true });
+      } else {
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw new Error(signInError.message);
+        const { data: existing } = await supabase
+          .from("users_roles")
+          .select("role")
+          .eq("id", data.user.id)
+          .maybeSingle();
+        if (existing?.role) {
+          await refreshProfile();
+          navigate(landingFor(existing.role), { replace: true });
+        } else {
+          await saveProfile(data.user, "supplier");
+          navigate("/supplier", { replace: true });
+        }
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendMagicLink = async () => {
+    setError(null);
+    setNotice(null);
+    if (!email) {
+      setError("Enter your email address first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: window.location.origin + "/auth" },
+      });
+      if (otpError) throw new Error(otpError.message);
+      setNotice("A one-time sign-in link is on its way to " + email + ".");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-navy">
+      <div className="vault-grid min-h-screen">
+        <div className="mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center gap-10 px-4 py-12 lg:flex-row lg:items-stretch">
+          <div className="w-full max-w-md text-white lg:py-10">
+            <Link to="/" className="flex items-center gap-2">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-compliance">
+                <Scale className="h-4 w-4 text-white" />
+              </span>
+              <span className="font-display text-xl">Pulao-AI</span>
+            </Link>
+            <h1 className="mt-8 font-display text-4xl leading-tight">
+              Governed procurement,
+              <br />
+              on the record.
+            </h1>
+            <p className="mt-4 text-sm leading-relaxed text-white/70">
+              Sign in to lodge bids, review evaluations, run policy analysis, or manage the system. Your role
+              decides which workspace opens.
+            </p>
+            <ul className="mt-8 space-y-3 text-sm text-white/70">
+              {SELECTABLE_ROLES.slice(0, 3).map((item) => (
+                <li key={item} className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-compliance" />
+                  {ROLE_LABELS[item]}
+                </li>
+              ))}
+              <li className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-compliance" />
+                System administrator &amp; super administrator
+              </li>
+            </ul>
+          </div>
+
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl sm:p-8">
+            <div className="flex gap-1 rounded-lg bg-secondary p-1">
+              {[
+                { key: "signin", label: "Sign in" },
+                { key: "register", label: "Create account" },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => {
+                    setMode(tab.key);
+                    setError(null);
+                    setNotice(null);
+                  }}
+                  className={cn(
+                    "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    mode === tab.key ? "bg-card text-navy shadow-sm" : "text-muted-foreground hover:text-navy",
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              {mode === "register" ? (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="name">Full name</Label>
+                    <Input
+                      id="name"
+                      value={fullName}
+                      onChange={(event) => setFullName(event.target.value)}
+                      placeholder="As it should appear on decisions"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="org">Organisation or entity</Label>
+                    <Input
+                      id="org"
+                      value={organization}
+                      onChange={(event) => setOrganization(event.target.value)}
+                      placeholder="Company or government body"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="role">Which workspace do you need?</Label>
+                    <select
+                      id="role"
+                      value={chosenRole}
+                      onChange={(event) => setChosenRole(event.target.value)}
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      {SELECTABLE_ROLES.map((item) => (
+                        <option key={item} value={item}>
+                          {ROLE_LABELS[item]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              ) : null}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email address</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="you@organisation.go.ke"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  required
+                  minLength={6}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="At least 6 characters"
+                />
+              </div>
+
+              {error ? (
+                <div className="flex items-start gap-2 rounded-lg border border-critical/30 bg-critical-soft p-3 text-sm text-critical">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {error}
+                </div>
+              ) : null}
+
+              {notice ? (
+                <div className="rounded-lg border border-compliance/30 bg-compliance-soft p-3 text-sm text-compliance">
+                  {notice}
+                </div>
+              ) : null}
+
+              <Button type="submit" disabled={busy} className="w-full bg-navy text-white hover:bg-navy/90">
+                {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {mode === "register" ? "Create my account" : "Sign in"}
+              </Button>
+            </form>
+
+            <div className="mt-5 border-t border-border pt-5">
+              <Button variant="outline" className="w-full" onClick={sendMagicLink} disabled={busy}>
+                <Mail className="mr-2 h-4 w-4" />
+                Email me a one-time sign-in link
+              </Button>
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Links expire after one use. Password sign-in is available immediately.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
