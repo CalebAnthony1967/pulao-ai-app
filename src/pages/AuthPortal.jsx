@@ -22,7 +22,7 @@ const DEMO_CREDENTIALS = {
 function landingFor(role) {
   if (role === "committee") return "/committee";
   if (role === "researcher") return "/research";
-  if (role === "admin" || role === "superadmin") return "/admin";
+  if (role === "admin") return "/admin";
   if (role === "superadmin") return "/vault";
   return "/supplier";
 }
@@ -33,8 +33,8 @@ export default function AuthPortal() {
   const params = new URLSearchParams(window.location.search);
   const [mode, setMode] = useState(params.get("mode") === "register" ? "register" : "signin");
   const [chosenRole, setChosenRole] = useState("supplier");
-  const [email, setEmail] = useState(DEMO_CREDENTIALS.supplier.email);
-  const [password, setPassword] = useState(DEMO_CREDENTIALS.supplier.password);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [organization, setOrganization] = useState("");
   const [busy, setBusy] = useState(false);
@@ -42,30 +42,17 @@ export default function AuthPortal() {
   const [notice, setNotice] = useState(null);
 
   useEffect(() => {
-    if (isAuthenticated && role) navigate(landingFor(role), { replace: true });
-  }, [isAuthenticated, role, navigate]);
+    if (isAuthenticated && role && mode === "signin") {
+      navigate(landingFor(role), { replace: true });
+    }
+  }, [isAuthenticated, role, navigate, mode]);
 
   const handleRoleChange = (roleValue) => {
     setChosenRole(roleValue);
-    if (DEMO_CREDENTIALS[roleValue]) {
+    if (mode === "signin" && DEMO_CREDENTIALS[roleValue]) {
       setEmail(DEMO_CREDENTIALS[roleValue].email);
       setPassword(DEMO_CREDENTIALS[roleValue].password);
     }
-  };
-
-  const saveProfile = async (user, roleValue) => {
-    const { error: upsertError } = await supabase.from("users_roles").upsert(
-      {
-        id: user.id,
-        email: user.email,
-        full_name: fullName.trim() || user.email.split("@")[0],
-        organization: organization.trim() || null,
-        role: roleValue,
-      },
-      { onConflict: "id" },
-    );
-    if (upsertError) throw new Error(upsertError.message);
-    await refreshProfile();
   };
 
   const handleSubmit = async (event) => {
@@ -73,22 +60,54 @@ export default function AuthPortal() {
     setError(null);
     setNotice(null);
     setBusy(true);
+
     try {
       if (mode === "register") {
-        const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
-        if (signUpError) throw new Error(signUpError.message);
-        if (!data.session) {
-          setNotice("Account created. Check your inbox to confirm your email address, then sign in.");
-          setMode("signin");
-          return;
+        if (!email || !password || !fullName) {
+          throw new Error("Please fill in all required registration fields.");
         }
-        await saveProfile(data.user, chosenRole);
-        navigate(landingFor(chosenRole), { replace: true });
+
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: fullName, organization, role: chosenRole }
+          }
+        });
+
+        if (signUpError) throw new Error(signUpError.message);
+
+        // Register profile in users_roles table immediately
+        const userId = data?.user?.id;
+        if (userId) {
+          const { error: dbError } = await supabase.from("users_roles").upsert(
+            {
+              id: userId,
+              email: email,
+              full_name: fullName.trim(),
+              organization: organization.trim() || null,
+              role: chosenRole,
+              created_at: new Date().toISOString()
+            },
+            { onConflict: "id" }
+          );
+          if (dbError) {
+            console.warn("Database role registration warning:", dbError.message);
+          }
+        }
+
+        // Successfully registered! Switch immediately to sign-in page with pre-filled credentials
+        setNotice("Account created and registered in database successfully! Please sign in below.");
+        setMode("signin");
+        setPassword(""); // keep email for easy sign-in
+        setBusy(false);
+        return;
+
       } else {
+        // Sign In workflow
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw new Error(signInError.message);
         
-        // Ensure user role is updated to the chosen role on login
         if (data?.user) {
           await supabase.from("users_roles").upsert(
             {
@@ -106,7 +125,7 @@ export default function AuthPortal() {
         navigate(landingFor(chosenRole), { replace: true });
       }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Authentication failed");
     } finally {
       setBusy(false);
     }
@@ -151,7 +170,7 @@ export default function AuthPortal() {
               on the record.
             </h1>
             <p className="mt-4 text-sm leading-relaxed text-white/70">
-              Sign in to lodge bids, review evaluations, run policy analysis, or manage the system. Select your portal role below.
+              Create an account or sign in to lodge bids, review evaluations, run policy analysis, or manage the system.
             </p>
             <ul className="mt-8 space-y-3 text-sm text-white/70">
               {SELECTABLE_ROLES.map((item) => (
@@ -210,9 +229,10 @@ export default function AuthPortal() {
               {mode === "register" ? (
                 <>
                   <div className="space-y-1.5">
-                    <Label htmlFor="name">Full name</Label>
+                    <Label htmlFor="name">Full name <span className="text-red-500">*</span></Label>
                     <Input
                       id="name"
+                      required
                       value={fullName}
                       onChange={(event) => setFullName(event.target.value)}
                       placeholder="As it should appear on decisions"
@@ -231,7 +251,7 @@ export default function AuthPortal() {
               ) : null}
 
               <div className="space-y-1.5">
-                <Label htmlFor="email">Email address</Label>
+                <Label htmlFor="email">Email address <span className="text-red-500">*</span></Label>
                 <Input
                   id="email"
                   type="email"
@@ -243,7 +263,7 @@ export default function AuthPortal() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Password <span className="text-red-500">*</span></Label>
                 <Input
                   id="password"
                   type="password"
@@ -263,14 +283,14 @@ export default function AuthPortal() {
               ) : null}
 
               {notice ? (
-                <div className="rounded-lg border border-compliance/30 bg-compliance-soft p-3 text-sm text-compliance">
+                <div className="rounded-lg border border-compliance/30 bg-compliance-soft p-3 text-sm text-compliance font-medium">
                   {notice}
                 </div>
               ) : null}
 
               <Button type="submit" disabled={busy} className="w-full bg-navy text-white hover:bg-navy/90 h-11">
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {mode === "register" ? "Create my account" : `Sign in to ${ROLE_LABELS[chosenRole]}`}
+                {mode === "register" ? "Register & Save in Database" : `Sign in to ${ROLE_LABELS[chosenRole]}`}
               </Button>
             </form>
 
