@@ -1,5 +1,6 @@
 import React from "react";
 import PortalNav from "./PortalNav";
+import PulaoAssistantDrawer from "@/components/common/PulaoAssistantDrawer";
 
 export default function PortalShell({ eyebrow, title, description, actions, children }) {
   return (
@@ -22,6 +23,7 @@ export default function PortalShell({ eyebrow, title, description, actions, chil
         </div>
       </div>
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+      <PulaoAssistantDrawer />
     </div>
   );
 }

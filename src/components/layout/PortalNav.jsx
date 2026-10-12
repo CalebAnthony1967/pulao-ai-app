@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LogOut, Scale } from "lucide-react";
+import { LogOut, Scale, Shield } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { roleLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import AccessRequestModal from "@/components/common/AccessRequestModal";
 
 export const PORTALS = [
   { path: "/supplier", label: "Supplier desk", roles: ["supplier"] },
@@ -17,6 +18,7 @@ export default function PortalNav() {
   const { profile, role, signOut } = useSession();
   const location = useLocation();
   const navigate = useNavigate();
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
 
   const visible = PORTALS.filter((portal) => portal.roles.includes(role));
 
@@ -53,6 +55,17 @@ export default function PortalNav() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
+          {role === "supplier" && (
+            <button
+              type="button"
+              onClick={() => setRequestModalOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 rounded-md border border-compliance/40 bg-compliance/20 px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-compliance/30"
+            >
+              <Shield className="h-3.5 w-3.5" />
+              Request Role Access
+            </button>
+          )}
+
           <div className="hidden text-right sm:block">
             <p className="text-xs font-medium leading-tight">{profile?.full_name || "Signed in"}</p>
             <p className="text-[11px] leading-tight text-white/60">{roleLabel(role)}</p>
@@ -83,7 +96,18 @@ export default function PortalNav() {
             {portal.label}
           </Link>
         ))}
+        {role === "supplier" && (
+          <button
+            type="button"
+            onClick={() => setRequestModalOpen(true)}
+            className="whitespace-nowrap rounded-md bg-compliance/20 px-3 py-1.5 text-xs text-emerald-300"
+          >
+            Request Access
+          </button>
+        )}
       </nav>
+
+      <AccessRequestModal open={requestModalOpen} onOpenChange={setRequestModalOpen} />
     </header>
   );
 }

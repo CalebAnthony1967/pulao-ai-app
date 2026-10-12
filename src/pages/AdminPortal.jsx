@@ -7,6 +7,7 @@ import RoleGate from "@/components/common/RoleGate";
 import ToolHealthGrid from "@/components/admin/ToolHealthGrid";
 import SettingsPanel from "@/components/admin/SettingsPanel";
 import TeamRoles from "@/components/admin/TeamRoles";
+import AccessRequests from "@/components/admin/AccessRequests";
 import LoadingBlock from "@/components/common/LoadingBlock";
 
 export default function AdminPortal() {
@@ -46,6 +47,7 @@ export default function AdminPortal() {
           <LoadingBlock label="Loading system status" />
         ) : (
           <div className="space-y-6">
+            <AccessRequests />
             <ToolHealthGrid logs={data.logs} counts={data.counts} />
 
             <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
