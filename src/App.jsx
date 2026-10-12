@@ -17,6 +17,7 @@ import EvaluationWorkspace from '@/pages/EvaluationWorkspace';
 import ResearchPortal from '@/pages/ResearchPortal';
 import AdminPortal from '@/pages/AdminPortal';
 import AuditVault from '@/pages/AuditVault';
+import Login from '@/pages/Login';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -47,6 +48,8 @@ const AuthenticatedApp = () => {
       <Route path="/" element={<Landing />} />
       <Route path="/tenders/:id" element={<TenderDetail />} />
       <Route path="/auth" element={<AuthPortal />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<AuthPortal />} />
       <Route path="/supplier" element={<SupplierPortal />} />
       <Route path="/supplier/self-audit" element={<SelfAudit />} />
       <Route path="/committee" element={<CommitteePortal />} />

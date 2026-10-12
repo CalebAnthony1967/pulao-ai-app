@@ -55,16 +55,22 @@ export async function listEvaluations(tenderId) {
 
 export async function listMyEvaluations(userId) {
   try {
-    const { data, error } = await supabase
+    if (!userId) return [];
+    const { data: myBids } = await supabase
+      .from("bid_submissions")
+      .select("id")
+      .eq("submitted_by", userId);
+    
+    if (!myBids || myBids.length === 0) return [];
+    const bidIds = myBids.map((b) => b.id);
+
+    const { data: evals } = await supabase
       .from("compliance_evaluations")
-      .select("*, bid_submissions!inner(bidder_name, submitted_by), tenders_ocds(tender_number, title)")
-      .eq("bid_submissions.submitted_by", userId);
-    if (error) throw error;
-    return data || [];
-  } catch {
-    // Fallback query without complex join if FK relationship not configured
-    const { data: evals } = await supabase.from("compliance_evaluations").select("*");
+      .select("*")
+      .in("bid_id", bidIds);
     return evals || [];
+  } catch {
+    return [];
   }
 }
 

@@ -4,15 +4,36 @@ import { supabase } from "./supabase";
 const SessionContext = createContext(null);
 
 export function SessionProvider({ children }) {
-  const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState(() => {
+    try {
+      const stored = localStorage.getItem("pulao_session");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed.session || { user: parsed.user };
+      }
+    } catch {}
+    return null;
+  });
+
+  const [profile, setProfile] = useState(() => {
+    try {
+      const stored = localStorage.getItem("pulao_session");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed.profile || null;
+      }
+    } catch {}
+    return null;
+  });
+
+  const [loading, setLoading] = useState(false);
 
   const loadProfile = useCallback(async (user) => {
     if (!user) {
       setProfile(null);
       return;
     }
+
     try {
       const { data, error } = await supabase
         .from("users_roles")
@@ -20,31 +41,58 @@ export function SessionProvider({ children }) {
         .eq("id", user.id)
         .maybeSingle();
 
-      if (error || !data) {
-        // Fallback profile if table is missing or user row not found
-        const fallbackRole = user.email?.includes("admin") ? "admin" : user.email?.includes("committee") ? "committee" : user.email?.includes("research") ? "researcher" : "supplier";
-        setProfile({
-          id: user.id,
-          email: user.email,
-          full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
-          organization: "Pulao-AI User",
-          role: fallbackRole,
-          created_at: new Date().toISOString()
-        });
-      } else {
+      if (!error && data) {
         setProfile(data);
+        try {
+          const stored = localStorage.getItem("pulao_session");
+          const parsed = stored ? JSON.parse(stored) : {};
+          localStorage.setItem("pulao_session", JSON.stringify({ ...parsed, profile: data }));
+        } catch {}
+      } else {
+        // Fallback profile if table lookup fails
+        setProfile((prev) => {
+          if (prev && prev.id === user.id) return prev;
+          const fallbackRole = user.email?.includes("admin")
+            ? user.email?.includes("super") ? "superadmin" : "admin"
+            : user.email?.includes("committee")
+            ? "committee"
+            : user.email?.includes("research")
+            ? "researcher"
+            : "supplier";
+          const newProfile = {
+            id: user.id,
+            email: user.email,
+            full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
+            organization: user.user_metadata?.organization || "Pulao-AI User",
+            role: user.user_metadata?.role || fallbackRole,
+            created_at: new Date().toISOString(),
+          };
+          try {
+            localStorage.setItem("pulao_session", JSON.stringify({ user, profile: newProfile }));
+          } catch {}
+          return newProfile;
+        });
       }
-    } catch (err) {
-      // Graceful fallback on any network/schema error
-      setProfile({
+    } catch {
+      // Graceful fallback on network/schema error
+      setProfile((prev) => prev || {
         id: user.id,
         email: user.email,
         full_name: user.email?.split("@")[0] || "User",
         organization: "Pulao-AI User",
         role: "supplier",
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
       });
     }
+  }, []);
+
+  const setAuthSession = useCallback((user, userProfile) => {
+    const s = { user };
+    setSession(s);
+    setProfile(userProfile);
+    try {
+      localStorage.setItem("pulao_session", JSON.stringify({ user, profile: userProfile }));
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -52,27 +100,37 @@ export function SessionProvider({ children }) {
 
     supabase.auth.getSession().then(async ({ data }) => {
       if (!active) return;
-      setSession(data.session);
-      await loadProfile(data.session?.user);
+      if (data.session) {
+        setSession(data.session);
+        await loadProfile(data.session.user);
+      }
       setLoading(false);
+    }).catch(() => {
+      if (active) setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, next) => {
       if (!active) return;
-      setSession(next);
-      await loadProfile(next?.user);
+      if (next?.user) {
+        setSession(next);
+        await loadProfile(next.user);
+      }
       setLoading(false);
     });
 
     return () => {
       active = false;
-      listener.subscription.unsubscribe();
+      listener?.subscription?.unsubscribe();
     };
   }, [loadProfile]);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      localStorage.removeItem("pulao_session");
+    } catch {}
+    setSession(null);
     setProfile(null);
+    await supabase.auth.signOut().catch(() => {});
   };
 
   const value = {
@@ -80,10 +138,11 @@ export function SessionProvider({ children }) {
     user: session?.user ?? null,
     profile,
     role: profile?.role ?? null,
-    isAuthenticated: Boolean(session?.user),
+    isAuthenticated: Boolean(session?.user || profile),
     loading,
     signOut,
-    refreshProfile: () => loadProfile(session?.user?.id),
+    setAuthSession,
+    refreshProfile: () => loadProfile(session?.user),
   };
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

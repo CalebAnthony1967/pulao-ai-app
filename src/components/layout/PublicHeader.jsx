@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 function landingFor(role) {
   if (role === "committee") return "/committee";
   if (role === "researcher") return "/research";
-  if (role === "admin" || role === "superadmin") return "/admin";
+  if (role === "superadmin") return "/vault";
+  if (role === "admin") return "/admin";
   return "/supplier";
 }
 
