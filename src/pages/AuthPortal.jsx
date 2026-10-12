@@ -77,50 +77,16 @@ export default function AuthPortal() {
 
         if (signUpError) throw new Error(signUpError.message);
 
-        // Register profile in users_roles table immediately
-        const userId = data?.user?.id;
-        if (userId) {
-          const { error: dbError } = await supabase.from("users_roles").upsert(
-            {
-              id: userId,
-              email: email,
-              full_name: fullName.trim(),
-              organization: organization.trim() || null,
-              role: chosenRole,
-              created_at: new Date().toISOString()
-            },
-            { onConflict: "id" }
-          );
-          if (dbError) {
-            console.warn("Database role registration warning:", dbError.message);
-          }
-        }
-
-        // Successfully registered! Switch immediately to sign-in page with pre-filled credentials
-        setNotice("Account created and registered in database successfully! Please sign in below.");
+        setNotice("Account created successfully! Please sign in below.");
         setMode("signin");
-        setPassword(""); // keep email for easy sign-in
+        setPassword("");
         setBusy(false);
         return;
 
       } else {
-        // Sign In workflow
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw new Error(signInError.message);
         
-        if (data?.user) {
-          await supabase.from("users_roles").upsert(
-            {
-              id: data.user.id,
-              email: data.user.email,
-              role: chosenRole,
-              full_name: data.user.user_metadata?.full_name || email.split("@")[0],
-              updated_at: new Date().toISOString()
-            },
-            { onConflict: "id" }
-          ).catch(() => {});
-        }
-
         await refreshProfile();
         navigate(landingFor(chosenRole), { replace: true });
       }
@@ -290,7 +256,7 @@ export default function AuthPortal() {
 
               <Button type="submit" disabled={busy} className="w-full bg-navy text-white hover:bg-navy/90 h-11">
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {mode === "register" ? "Register & Save in Database" : `Sign in to ${ROLE_LABELS[chosenRole]}`}
+                {mode === "register" ? "Create account" : `Sign in to ${ROLE_LABELS[chosenRole]}`}
               </Button>
             </form>
 
