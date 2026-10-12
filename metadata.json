@@ -1,0 +1,8 @@
+{
+  "name": "Pulao-AI",
+  "description": "Public Unified Tender Audit & Oversight Agent - Track 2 Governance (Open Contracting Data Standard - OCDS)",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
