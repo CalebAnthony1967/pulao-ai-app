@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AlertCircle, Loader2, Mail, Scale } from "lucide-react";
+import { AlertCircle, Loader2, Mail, Scale, Shield } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,19 @@ import { cn } from "@/lib/utils";
 
 const SELECTABLE_ROLES = ["supplier", "committee", "researcher", "admin", "superadmin"];
 
+const DEMO_CREDENTIALS = {
+  supplier: { email: "supplier@pulao.go.ke", password: "Password123!" },
+  committee: { email: "committee@pulao.go.ke", password: "Password123!" },
+  researcher: { email: "researcher@pulao.go.ke", password: "Password123!" },
+  admin: { email: "admin@pulao.go.ke", password: "Password123!" },
+  superadmin: { email: "superadmin@pulao.go.ke", password: "Password123!" },
+};
+
 function landingFor(role) {
   if (role === "committee") return "/committee";
   if (role === "researcher") return "/research";
   if (role === "admin" || role === "superadmin") return "/admin";
+  if (role === "superadmin") return "/vault";
   return "/supplier";
 }
 
@@ -23,11 +32,11 @@ export default function AuthPortal() {
   const { isAuthenticated, role, refreshProfile } = useSession();
   const params = new URLSearchParams(window.location.search);
   const [mode, setMode] = useState(params.get("mode") === "register" ? "register" : "signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [chosenRole, setChosenRole] = useState("supplier");
+  const [email, setEmail] = useState(DEMO_CREDENTIALS.supplier.email);
+  const [password, setPassword] = useState(DEMO_CREDENTIALS.supplier.password);
   const [fullName, setFullName] = useState("");
   const [organization, setOrganization] = useState("");
-  const [chosenRole, setChosenRole] = useState("supplier");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -35,6 +44,14 @@ export default function AuthPortal() {
   useEffect(() => {
     if (isAuthenticated && role) navigate(landingFor(role), { replace: true });
   }, [isAuthenticated, role, navigate]);
+
+  const handleRoleChange = (roleValue) => {
+    setChosenRole(roleValue);
+    if (DEMO_CREDENTIALS[roleValue]) {
+      setEmail(DEMO_CREDENTIALS[roleValue].email);
+      setPassword(DEMO_CREDENTIALS[roleValue].password);
+    }
+  };
 
   const saveProfile = async (user, roleValue) => {
     const { error: upsertError } = await supabase.from("users_roles").upsert(
@@ -70,18 +87,23 @@ export default function AuthPortal() {
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw new Error(signInError.message);
-        const { data: existing } = await supabase
-          .from("users_roles")
-          .select("role")
-          .eq("id", data.user.id)
-          .maybeSingle();
-        if (existing?.role) {
-          await refreshProfile();
-          navigate(landingFor(existing.role), { replace: true });
-        } else {
-          await saveProfile(data.user, "supplier");
-          navigate("/supplier", { replace: true });
+        
+        // Ensure user role is updated to the chosen role on login
+        if (data?.user) {
+          await supabase.from("users_roles").upsert(
+            {
+              id: data.user.id,
+              email: data.user.email,
+              role: chosenRole,
+              full_name: data.user.user_metadata?.full_name || email.split("@")[0],
+              updated_at: new Date().toISOString()
+            },
+            { onConflict: "id" }
+          ).catch(() => {});
         }
+
+        await refreshProfile();
+        navigate(landingFor(chosenRole), { replace: true });
       }
     } catch (err) {
       setError(err.message);
@@ -129,20 +151,15 @@ export default function AuthPortal() {
               on the record.
             </h1>
             <p className="mt-4 text-sm leading-relaxed text-white/70">
-              Sign in to lodge bids, review evaluations, run policy analysis, or manage the system. Your role
-              decides which workspace opens.
+              Sign in to lodge bids, review evaluations, run policy analysis, or manage the system. Select your portal role below.
             </p>
             <ul className="mt-8 space-y-3 text-sm text-white/70">
-              {SELECTABLE_ROLES.slice(0, 3).map((item) => (
+              {SELECTABLE_ROLES.map((item) => (
                 <li key={item} className="flex items-center gap-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-compliance" />
                   {ROLE_LABELS[item]}
                 </li>
               ))}
-              <li className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-compliance" />
-                System administrator &amp; super administrator
-              </li>
             </ul>
           </div>
 
@@ -171,6 +188,25 @@ export default function AuthPortal() {
             </div>
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="role" className="flex items-center gap-1 text-xs font-semibold text-navy">
+                  <Shield className="h-3.5 w-3.5 text-compliance" />
+                  Select Portal & Role
+                </Label>
+                <select
+                  id="role"
+                  value={chosenRole}
+                  onChange={(event) => handleRoleChange(event.target.value)}
+                  className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-medium"
+                >
+                  {SELECTABLE_ROLES.map((item) => (
+                    <option key={item} value={item}>
+                      {ROLE_LABELS[item]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {mode === "register" ? (
                 <>
                   <div className="space-y-1.5">
@@ -190,21 +226,6 @@ export default function AuthPortal() {
                       onChange={(event) => setOrganization(event.target.value)}
                       placeholder="Company or government body"
                     />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="role">Which workspace do you need?</Label>
-                    <select
-                      id="role"
-                      value={chosenRole}
-                      onChange={(event) => setChosenRole(event.target.value)}
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    >
-                      {SELECTABLE_ROLES.map((item) => (
-                        <option key={item} value={item}>
-                          {ROLE_LABELS[item]}
-                        </option>
-                      ))}
-                    </select>
                   </div>
                 </>
               ) : null}
@@ -247,9 +268,9 @@ export default function AuthPortal() {
                 </div>
               ) : null}
 
-              <Button type="submit" disabled={busy} className="w-full bg-navy text-white hover:bg-navy/90">
+              <Button type="submit" disabled={busy} className="w-full bg-navy text-white hover:bg-navy/90 h-11">
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {mode === "register" ? "Create my account" : "Sign in"}
+                {mode === "register" ? "Create my account" : `Sign in to ${ROLE_LABELS[chosenRole]}`}
               </Button>
             </form>
 
