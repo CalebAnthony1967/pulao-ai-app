@@ -15,15 +15,15 @@ import LoadingBlock from "@/components/common/LoadingBlock";
 import { Button } from "@/components/ui/button";
 
 export default function SupplierPortal() {
-  const { user } = useSession();
+  const { user, profile } = useSession();
   const [bids, setBids] = useState(null);
   const [evaluations, setEvaluations] = useState([]);
 
   useEffect(() => {
-    if (!user) return;
-    listMyBids(user.id).then(setBids).catch(() => setBids([]));
-    listMyEvaluations(user.id).then(setEvaluations).catch(() => setEvaluations([]));
-  }, [user]);
+    const uid = user?.id || profile?.id;
+    listMyBids(uid).then(setBids).catch(() => setBids([]));
+    listMyEvaluations(uid).then(setEvaluations).catch(() => setEvaluations([]));
+  }, [user, profile]);
 
   const evaluationFor = (bidId) => evaluations.find((row) => row.bid_id === bidId);
 

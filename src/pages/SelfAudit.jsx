@@ -37,17 +37,29 @@ export default function SelfAudit() {
     }
     setRunning(true);
     try {
+      const parsedItems = items
+        .map((item, idx) => ({
+          ...item,
+          description: item.description?.trim() || `Item #${idx + 1}`,
+          unit_price:
+            typeof item.unit_price === "number"
+              ? item.unit_price
+              : Number(String(item.unit_price || "0").replace(/[^0-9.-]+/g, "")) || 0,
+          quantity:
+            typeof item.quantity === "number"
+              ? item.quantity
+              : Number(String(item.quantity || "1").replace(/[^0-9.-]+/g, "")) || 1,
+        }))
+        .filter((item) => item.unit_price > 0);
+
       const statutory = verifyStatutoryCompliance(registrationNumber, bidderName);
-      const pricing = benchmarkPricing(
-        items.filter((item) => item.description.trim()),
-        index,
-      );
+      const pricing = benchmarkPricing(parsedItems, index);
       await recordAudit({
         action: "Pre-submission self-audit run",
         tool: "verify_statutory_compliance",
         input: { bidder: bidderName, registration_number: registrationNumber },
         output: { failures: statutory.failures, flagged_items: pricing.flagged.length },
-      });
+      }).catch(() => {});
       setResult({ statutory, pricing });
     } catch (err) {
       setError(err.message);

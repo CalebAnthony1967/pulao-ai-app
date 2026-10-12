@@ -32,12 +32,18 @@ export default function EvaluationWorkspace() {
       listDecisions(id),
       listPriceIndex(),
     ]);
+    const bidMap = new Map((bidRows || []).map((b) => [b.id, b]));
+    const augmentedEvals = (evaluationRows || []).map((e) => ({
+      ...e,
+      bid_submissions: e.bid_submissions || bidMap.get(e.bid_id) || null,
+    }));
+
     setTender(tenderRow || null);
-    setBids(bidRows);
-    setEvaluations(evaluationRows);
-    setDecisions(decisionRows);
-    setPriceIndex(indexRows);
-    setSelectedId((current) => current || evaluationRows[0]?.id || null);
+    setBids(bidRows || []);
+    setEvaluations(augmentedEvals);
+    setDecisions(decisionRows || []);
+    setPriceIndex(indexRows || []);
+    setSelectedId((current) => current || augmentedEvals[0]?.id || null);
     setLoading(false);
   }, [id]);
 

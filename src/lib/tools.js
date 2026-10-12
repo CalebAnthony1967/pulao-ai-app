@@ -1,6 +1,7 @@
 import { base44 } from "@/api/base44Client";
 import { supabase } from "./supabase";
 import { recordAudit } from "./audit";
+import { saveLocalEvaluation } from "./data";
 
 export const TOOL = {
   parse: "parse_tender_packet",
@@ -508,10 +509,12 @@ export async function runAuditPipeline({ tender, bids, priceIndex, onProgress = 
   const collusion = detectCollusionPatterns(bids);
 
   step("Clearing earlier evaluations");
-  await supabase
-    .from("compliance_evaluations")
-    .delete()
-    .in("bid_id", bids.map((bid) => bid.id));
+  try {
+    await supabase
+      .from("compliance_evaluations")
+      .delete()
+      .in("bid_id", bids.map((bid) => bid.id));
+  } catch {}
 
   const saved = [];
   for (const bid of bids) {
@@ -524,8 +527,10 @@ export async function runAuditPipeline({ tender, bids, priceIndex, onProgress = 
     const overall = critical > 0 ? "critical" : warnings > 0 ? "warning" : "compliant";
 
     const record = {
+      id: "eval_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
       bid_id: bid.id,
       tender_id: tender.id,
+      bid_submissions: bid,
       kra_tax_status: statutory[bid.id].verdicts[0].status,
       brs_status: statutory[bid.id].verdicts[1].status,
       nssf_status: statutory[bid.id].verdicts[2].status,
@@ -551,9 +556,19 @@ export async function runAuditPipeline({ tender, bids, priceIndex, onProgress = 
       evaluated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase.from("compliance_evaluations").insert(record).select().single();
-    if (error) throw new Error(error.message);
-    saved.push(data);
+    let savedRow = null;
+    try {
+      const { data, error } = await supabase.from("compliance_evaluations").insert(record).select().single();
+      if (!error && data) {
+        savedRow = { ...data, bid_submissions: bid };
+      }
+    } catch {}
+
+    if (!savedRow) {
+      savedRow = record;
+    }
+    saveLocalEvaluation(savedRow);
+    saved.push(savedRow);
   }
 
   await recordAudit({

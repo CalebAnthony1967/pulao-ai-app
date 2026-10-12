@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Gavel, Inbox } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { loadPortfolio } from "@/lib/data";
 import { formatCompactCurrency, deadlineLabel } from "@/lib/format";
 import { overallStyle } from "@/lib/statusLabels";
 import PortalShell from "@/components/layout/PortalShell";
@@ -17,16 +17,11 @@ export default function CommitteePortal() {
 
   useEffect(() => {
     (async () => {
-      const [tenders, bids, evaluations, decisions] = await Promise.all([
-        supabase.from("tenders_ocds").select("*").order("submission_deadline"),
-        supabase.from("bid_submissions").select("id, tender_id"),
-        supabase.from("compliance_evaluations").select("id, tender_id, overall_status"),
-        supabase.from("committee_decisions").select("id"),
-      ]);
-      const bidRows = bids.data || [];
-      const evalRows = evaluations.data || [];
+      const { tenders, bids, evaluations, decisions: decRows } = await loadPortfolio();
+      const bidRows = bids || [];
+      const evalRows = evaluations || [];
       setRows(
-        (tenders.data || []).map((tender) => ({
+        (tenders || []).map((tender) => ({
           ...tender,
           bidCount: bidRows.filter((bid) => bid.tender_id === tender.id).length,
           auditedCount: evalRows.filter((row) => row.tender_id === tender.id).length,
@@ -36,7 +31,7 @@ export default function CommitteePortal() {
             .length,
         })),
       );
-      setDecisions(decisions.data || []);
+      setDecisions(decRows || []);
     })();
   }, []);
 

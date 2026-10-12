@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { UserCheck, CheckCircle2, XCircle, Loader2, ShieldAlert } from "lucide-react";
+import { UserCheck, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { recordAudit } from "@/lib/audit";
