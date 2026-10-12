@@ -1,30 +1,72 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { Link, useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
+import { LogIn, Mail, Lock, Loader2, Shield } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 import GoogleIcon from "@/components/GoogleIcon";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
+const ROLE_ROUTES = {
+  supplier: "/supplier",
+  committee: "/committee",
+  researcher: "/research",
+  admin: "/admin",
+  superadmin: "/vault",
+};
+
+const DEMO_CREDENTIALS = {
+  supplier: { email: "supplier@pulao.go.ke", password: "Password123!" },
+  committee: { email: "committee@pulao.go.ke", password: "Password123!" },
+  researcher: { email: "researcher@pulao.go.ke", password: "Password123!" },
+  admin: { email: "admin@pulao.go.ke", password: "Password123!" },
+  superadmin: { email: "superadmin@pulao.go.ke", password: "Password123!" },
+};
+
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [selectedRole, setSelectedRole] = useState("supplier");
+  const [email, setEmail] = useState(DEMO_CREDENTIALS.supplier.email);
+  const [password, setPassword] = useState(DEMO_CREDENTIALS.supplier.password);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  // Post-login destination (e.g. the MCP OAuth consent page sends users here
-  // with returnTo so the grant flow can resume). Same-origin paths only.
-  const returnTo = safeReturnTo();
+  const navigate = useNavigate();
+
+  const handleRoleChange = (role) => {
+    setSelectedRole(role);
+    if (DEMO_CREDENTIALS[role]) {
+      setEmail(DEMO_CREDENTIALS[role].email);
+      setPassword(DEMO_CREDENTIALS[role].password);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await base44.auth.loginViaEmailPassword(email, password);
-      window.location.href = returnTo;
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) throw authError;
+
+      // Update or ensure role in users_roles table
+      if (data?.user) {
+        await supabase.from("users_roles").upsert({
+          id: data.user.id,
+          email: data.user.email,
+          role: selectedRole,
+          full_name: data.user.user_metadata?.full_name || email.split("@")[0],
+          updated_at: new Date().toISOString()
+        }, { onConflict: "id" }).catch(() => {});
+      }
+
+      const destination = ROLE_ROUTES[selectedRole] || safeReturnTo();
+      navigate(destination);
     } catch (err) {
       setError(err.message || "Invalid email or password");
     } finally {
@@ -33,22 +75,26 @@ export default function Login() {
   };
 
   const handleGoogle = () => {
-    base44.auth.loginWithProvider("google", returnTo);
+    const destination = ROLE_ROUTES[selectedRole] || safeReturnTo();
+    supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + destination }
+    });
   };
 
   return (
     <AuthLayout
       icon={LogIn}
-      title="Welcome back"
-      subtitle="Log in to your account"
+      title="Welcome to Pulao-AI"
+      subtitle="Select your role and log in to your portal"
       footer={
         <>
           Don't have an account?{" "}
           <Link
-            to={"/register" + (returnTo !== "/" ? "?returnTo=" + encodeURIComponent(returnTo) : "")}
+            to="/register"
             className="text-primary font-medium hover:underline"
           >
-            Create one
+            Create supplier account
           </Link>
         </>
       }
@@ -67,7 +113,7 @@ export default function Login() {
           <div className="w-full border-t border-border" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-3 text-muted-foreground">or</span>
+          <span className="bg-card px-3 text-muted-foreground">or sign in with email</span>
         </div>
       </div>
 
@@ -79,6 +125,25 @@ export default function Login() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
+          <Label htmlFor="role-select" className="flex items-center gap-1.5">
+            <Shield className="h-3.5 w-3.5 text-compliance" />
+            Target Portal / Role
+          </Label>
+          <Select value={selectedRole} onValueChange={handleRoleChange}>
+            <SelectTrigger id="role-select" className="h-12">
+              <SelectValue placeholder="Select role" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="supplier">Supplier Desk (Supplier Portal)</SelectItem>
+              <SelectItem value="committee">Evaluation Room (Committee Workspace)</SelectItem>
+              <SelectItem value="researcher">Policy & Analytics (Research Portal)</SelectItem>
+              <SelectItem value="admin">System Control (Admin Portal)</SelectItem>
+              <SelectItem value="superadmin">Audit Vault (Super Admin)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
@@ -86,7 +151,6 @@ export default function Login() {
               id="email"
               type="email"
               autoComplete="email"
-              autoFocus
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -95,6 +159,7 @@ export default function Login() {
             />
           </div>
         </div>
+
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="password">Password</Label>
@@ -116,14 +181,15 @@ export default function Login() {
             />
           </div>
         </div>
-        <Button type="submit" className="w-full h-12 font-medium" disabled={loading}>
+
+        <Button type="submit" className="w-full h-12 font-medium bg-navy text-white hover:bg-navy/90" disabled={loading}>
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Logging in...
+              Logging in to {selectedRole} portal...
             </>
           ) : (
-            "Log in"
+            `Log in as ${selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}`
           )}
         </Button>
       </form>
